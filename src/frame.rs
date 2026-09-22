@@ -95,22 +95,9 @@ impl Frame {
     }
 }
 
-/// The 802.15.4 frame check sequence: CRC-16 with the ITU-T polynomial,
-/// reflected, seeded with zero.
-#[must_use]
-pub fn crc16(bytes: &[u8]) -> u16 {
-    bytes.iter().fold(0u16, |mut crc, byte| {
-        crc ^= u16::from(*byte);
-        for _ in 0..8 {
-            crc = if crc & 1 != 0 {
-                (crc >> 1) ^ 0x8408
-            } else {
-                crc >> 1
-            };
-        }
-        crc
-    })
-}
+/// The 802.15.4 frame check sequence, which every technology on that radio
+/// shares.
+pub use transport::crc::kermit as crc16;
 
 /// What a frame's payload says in 6LoWPAN terms.
 #[derive(Clone, Debug, PartialEq, Eq)]
