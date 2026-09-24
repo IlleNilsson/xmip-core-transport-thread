@@ -4,6 +4,7 @@
 
 use std::net::Ipv6Addr;
 
+use transport::ceiling;
 use transport::error::{Result, protocol_error};
 
 use crate::frame::{self, Lowpan, MAX_DATAGRAM};
@@ -49,12 +50,11 @@ impl Datagram {
     /// # Errors
     /// More payload than [`MAX_UDP_PAYLOAD`].
     pub fn encode(&self) -> Result<Vec<u8>> {
-        if self.payload.len() > MAX_UDP_PAYLOAD {
-            return Err(protocol_error(format!(
-                "{} bytes is over the {MAX_UDP_PAYLOAD} one 6LoWPAN datagram carries",
-                self.payload.len()
-            )));
-        }
+        ceiling::within(
+            self.payload.len(),
+            MAX_UDP_PAYLOAD,
+            "one 6LoWPAN datagram carries",
+        )?;
         let udp_length = u16::try_from(UDP_HEADER + self.payload.len()).unwrap_or(u16::MAX);
         let mut out = vec![0x60, 0, 0, 0];
         out.extend_from_slice(&udp_length.to_be_bytes());
