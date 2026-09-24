@@ -29,6 +29,7 @@ use std::time::Duration;
 pub use datagram::{Datagram, MAX_UDP_PAYLOAD, Reassembly};
 pub use frame::{Frame, Lowpan};
 use transport::error::{Result, TransportError, protocol_error};
+use transport::held::Held;
 use transport::loopback::{FarEnd, LOOPBACK_TIMEOUT, Loopback};
 use transport::{Arrived, Directions, Transport};
 
@@ -260,30 +261,6 @@ impl ThreadTransport {
     }
 }
 
-/// The leader, holding the datagram it took whole.
-struct Served {
-    transport: ThreadTransport,
-    radio: Arc<LoopbackRadio>,
-    address: String,
-}
-
-impl FarEnd for Served {
-    fn address(&self) -> &str {
-        &self.address
-    }
-
-    fn take_one(self: Box<Self>) -> Result<Arrived> {
-        let datagram = self
-            .radio
-            .take()
-            .ok_or_else(|| protocol_error("no datagram came together"))?;
-        let origin = self
-            .transport
-            .origin(&datagram.source, datagram.source_port);
-        Ok(Arrived::new(origin, datagram.payload))
-    }
-}
-
 impl Loopback for ThreadTransport {
     /// Eleven bits size a 6LoWPAN datagram, and the IPv6 and UDP headers
     /// take forty-eight of them.
@@ -291,16 +268,24 @@ impl Loopback for ThreadTransport {
         Some(MAX_UDP_PAYLOAD)
     }
 
+    /// The leader, holding the datagram it took whole.
     fn far_end(&self) -> Result<Box<dyn FarEnd>> {
         let radio = self
             .loopback
             .as_ref()
             .ok_or_else(|| protocol_error("a radio, not a loopback radio"))?;
-        Ok(Box::new(Served {
-            transport: self.clone(),
-            radio: Arc::clone(radio),
-            address: self.origin(self.destination.ip(), self.destination.port()),
-        }))
+        let transport = self.clone();
+        let radio = Arc::clone(radio);
+        Ok(Box::new(Held::new(
+            self.origin(self.destination.ip(), self.destination.port()),
+            move || {
+                let datagram = radio
+                    .take()
+                    .ok_or_else(|| protocol_error("no datagram came together"))?;
+                let origin = transport.origin(&datagram.source, datagram.source_port);
+                Ok(Arrived::new(origin, datagram.payload))
+            },
+        )))
     }
 
     fn send_to(&self, address: &str, payload: &[u8]) -> Result<()> {
