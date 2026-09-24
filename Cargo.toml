@@ -18,6 +18,8 @@ path = "src/lib.rs"
 # (repository-model.md). Standard library otherwise: the framing is bytes
 # and the loopback is in this process.
 transport = { package = "xmip-core-transport", git = "https://github.com/IlleNilsson/xmip-core-transport", branch = "main" }
+# The estate's encoding primitives: the IEEE 802.15.4 frame check sequence, CRC-16/KERMIT.
+codec = { package = "xmip-core-library-codec", git = "https://github.com/IlleNilsson/xmip-core-library-codec", branch = "main" }
 
 [dev-dependencies]
 # The loopback payloads the tests drive, from the capability's test

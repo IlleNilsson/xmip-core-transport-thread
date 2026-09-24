@@ -5,6 +5,7 @@
 //! first fragment and a FRAGN header, with an offset in eight-byte units,
 //! on every other.
 
+use codec::crc::CRC_16_KERMIT;
 use transport::error::{Result, protocol_error};
 
 /// The most a PHY packet holds.
@@ -62,7 +63,7 @@ impl Frame {
         out.extend_from_slice(&self.destination.to_le_bytes());
         out.extend_from_slice(&self.source.to_le_bytes());
         out.extend_from_slice(&self.payload);
-        out.extend_from_slice(&crc16(&out).to_le_bytes());
+        out.extend_from_slice(&CRC_16_KERMIT.checksum(&out).to_le_bytes());
         out
     }
 
@@ -79,7 +80,7 @@ impl Frame {
             return Err(protocol_error("a frame cut off inside its header"));
         }
         let (body, check) = bytes.split_at(bytes.len() - 2);
-        if crc16(body) != u16::from_le_bytes([check[0], check[1]]) {
+        if CRC_16_KERMIT.checksum(body) != u16::from_le_bytes([check[0], check[1]]) {
             return Err(protocol_error("a check sequence that does not check"));
         }
         if body[..2] != DATA_FRAME {
@@ -94,10 +95,6 @@ impl Frame {
         })
     }
 }
-
-/// The 802.15.4 frame check sequence, which every technology on that radio
-/// shares.
-pub use transport::crc::kermit as crc16;
 
 /// What a frame's payload says in 6LoWPAN terms.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -192,9 +189,8 @@ mod tests {
 
     #[test]
     fn a_data_frame_ends_in_the_check_sequence_the_standard_computes() {
-        // The CRC of "123456789" under this polynomial is the well-known
-        // 0x2189 (CRC-16/KERMIT, which 802.15.4 uses).
-        assert_eq!(crc16(b"123456789"), 0x2189);
+        // The check sequence is CRC-16/KERMIT, which codec holds to its
+        // catalogue check value.
         let frame = Frame::new(7, 0x0000, 0x1a2b, b"hi").expect("frame");
         let bytes = frame.encode();
         assert_eq!(&bytes[..9], &[0x41, 0x88, 7, 0xce, 0xfa, 0, 0, 0x2b, 0x1a]);
@@ -207,7 +203,9 @@ mod tests {
         assert!(Frame::decode(&[0; MAX_PHY + 1]).is_err(), "too long");
         let mut beacon = bytes;
         beacon[0] = 0x40;
-        let crc = crc16(&beacon[..beacon.len() - 2]).to_le_bytes();
+        let crc = CRC_16_KERMIT
+            .checksum(&beacon[..beacon.len() - 2])
+            .to_le_bytes();
         beacon.truncate(beacon.len() - 2);
         beacon.extend_from_slice(&crc);
         assert!(Frame::decode(&beacon).is_err(), "not a data frame");
