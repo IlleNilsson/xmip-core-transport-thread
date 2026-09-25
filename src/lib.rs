@@ -292,15 +292,11 @@ impl Loopback for ThreadTransport {
         self.clone().send(address, payload)
     }
 
-    fn unblock(&self, _address: &str) {
-        // The air is in-process; nothing listens on a socket.
-    }
-
     /// In order on one thread: the leader lives in the radio and reassembles
     /// as the node sends, so the send goes first and the take finds the
     /// datagram whole.
-    fn round(&self, payload: &[u8]) -> Result<Arrived> {
-        self.round_in_order(payload)
+    fn exchanges_in_order(&self) -> bool {
+        true
     }
 }
 
