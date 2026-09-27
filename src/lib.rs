@@ -31,7 +31,12 @@ pub use frame::{Frame, Lowpan};
 use transport::error::{Result, TransportError, protocol_error};
 use transport::held::Held;
 use transport::loopback::{FarEnd, LOOPBACK_TIMEOUT, Loopback};
-use transport::{Arrived, Directions, Transport};
+use transport::{Arrived, Configured, Directions, Transport};
+use xcore::settings::{Applies, Fixed, Kind, Presence, Read, Setting, Settings};
+
+/// How long a node waits for a datagram's next fragment unless told
+/// otherwise.
+pub const TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Where frames go and come from: the air, as one node hears it.
 pub trait Radio: Send + Sync {
@@ -126,7 +131,7 @@ impl ThreadTransport {
             port: 5683,
             destination: SocketAddrV6::new(Datagram::address_of(0x0000), 5683, 0, 0),
             counters: Arc::new(Mutex::new((0, 0))),
-            timeout: Duration::from_secs(5),
+            timeout: TIMEOUT,
             loopback: None,
         }
     }
@@ -248,6 +253,52 @@ impl Transport for ThreadTransport {
     }
 }
 
+impl Configured for ThreadTransport {
+    /// The address names the radio. `loopback`, the in-process node, is the
+    /// one the estate has; an 802.15.4 radio joins when it exposes one.
+    const SETTINGS: &'static Settings = &Settings {
+        technology: env!("CARGO_PKG_NAME"),
+        settings: &[
+            Setting {
+                name: "rloc16",
+                kind: Kind::Integer {
+                    minimum: 0,
+                    maximum: 0xfffe,
+                },
+                presence: Presence::Required,
+                meaning: "This node's short address, from which its mesh-local address is \
+                          derived.",
+                applies: Applies::Both,
+            },
+            Setting {
+                name: "timeout",
+                kind: Kind::Duration,
+                presence: Presence::Default(Fixed::Duration(TIMEOUT)),
+                meaning: "How long a receive waits for a datagram and each of its fragments.",
+                applies: Applies::Receive,
+            },
+        ],
+    };
+
+    fn configured(address: &str, settings: &Read) -> Result<Self> {
+        let radio: Arc<dyn Radio> = match address {
+            "loopback" => Arc::new(LoopbackRadio::new()),
+            other => {
+                return Err(protocol_error(format!(
+                    "{other:?} is not a radio this estate has; `loopback` is"
+                )));
+            }
+        };
+        let rloc16 = u16::try_from(settings.integer("rloc16"))
+            .map_err(|_| protocol_error("a short address over 0xfffe"))?;
+        let transport = Self::new(radio, rloc16);
+        Ok(match settings.optional_duration("timeout") {
+            Some(timeout) => transport.timing_out_after(timeout),
+            None => transport,
+        })
+    }
+}
+
 impl ThreadTransport {
     /// Both ends on one in-process radio: a node at `0x1a2b` sending to the
     /// leader, and the leader taking, the loopback timeout on the fragments.
@@ -304,6 +355,27 @@ impl Loopback for ThreadTransport {
 mod tests {
     use super::*;
     use transport::payload::{edge_payloads, patterned};
+    use xcore::settings::Given;
+
+    #[test]
+    fn thread_declares_its_settings_and_reads_through_them() {
+        assert_eq!(ThreadTransport::SETTINGS.problems(), Vec::<String>::new());
+        let given = [
+            ("rloc16".to_string(), Given::Integer(0x1a2b)),
+            ("timeout".to_string(), Given::Text("250ms".to_string())),
+        ];
+        let built = ThreadTransport::open("loopback", Applies::Receive, &given).expect("built");
+        assert_eq!(built.rloc16, 0x1a2b);
+        assert_eq!(built.timeout, Duration::from_millis(250));
+        let rloc16 = [("rloc16".to_string(), Given::Integer(7))];
+        let sent = ThreadTransport::open("loopback", Applies::Send, &rloc16).expect("built");
+        assert_eq!(sent.timeout, TIMEOUT);
+        let Err(refused) = ThreadTransport::open("loopback", Applies::Receive, &[]) else {
+            panic!("rloc16 is required");
+        };
+        assert!(refused.message.contains("rloc16"), "{}", refused.message);
+        assert!(ThreadTransport::open("wpan0", Applies::Send, &rloc16).is_err());
+    }
 
     /// The shapes a protocol breaks on, as the Playground lists them, up to
     /// the ceiling.
