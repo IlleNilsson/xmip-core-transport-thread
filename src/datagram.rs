@@ -4,15 +4,15 @@
 
 use std::net::Ipv6Addr;
 
-use transport::ceiling;
+use net::ceiling;
 use transport::error::{Result, protocol_error};
 
 use crate::frame::{self, Lowpan, MAX_DATAGRAM};
 
 /// The IPv6 header.
-pub const IPV6_HEADER: usize = 40;
+const IPV6_HEADER: usize = 40;
 /// The UDP header.
-pub const UDP_HEADER: usize = 8;
+const UDP_HEADER: usize = 8;
 /// What a whole datagram carries: the size field is eleven bits and the two
 /// headers take forty-eight.
 pub const MAX_UDP_PAYLOAD: usize = MAX_DATAGRAM - IPV6_HEADER - UDP_HEADER;
@@ -21,9 +21,9 @@ pub const MAX_UNFRAGMENTED: usize = frame::MAX_PAYLOAD - 1 - IPV6_HEADER - UDP_H
 /// What a first fragment carries: the frame less four of FRAG1 header and
 /// the dispatch, rounded down to eight-byte units so the offsets that follow
 /// are whole.
-pub const FRAG1_BYTES: usize = (frame::MAX_PAYLOAD - 5) / 8 * 8;
+const FRAG1_BYTES: usize = (frame::MAX_PAYLOAD - 5) / 8 * 8;
 /// What a later fragment carries: the frame less five of FRAGN header.
-pub const FRAGN_BYTES: usize = (frame::MAX_PAYLOAD - 5) / 8 * 8;
+const FRAGN_BYTES: usize = (frame::MAX_PAYLOAD - 5) / 8 * 8;
 
 const NEXT_HEADER_UDP: u8 = 17;
 
