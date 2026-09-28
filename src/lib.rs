@@ -28,6 +28,7 @@ use std::time::Duration;
 
 pub use datagram::{Datagram, MAX_UDP_PAYLOAD, Reassembly};
 pub use frame::{Frame, Lowpan};
+use net::Target;
 use transport::error::{Result, TransportError, protocol_error};
 use transport::held::Held;
 use transport::loopback::{FarEnd, LOOPBACK_TIMEOUT, Loopback};
@@ -158,7 +159,7 @@ impl ThreadTransport {
     /// The short address a mesh-local address names, or `None` off the
     /// mesh, where the leader forwards for the border router.
     #[must_use]
-    pub fn rloc16_of(address: &Ipv6Addr) -> Option<u16> {
+    fn rloc16_of(address: &Ipv6Addr) -> Option<u16> {
         let segments = address.segments();
         (segments[..7] == [0xfd00, 0, 0, 0, 0, 0x00ff, 0xfe00]).then_some(segments[7])
     }
@@ -175,7 +176,7 @@ impl ThreadTransport {
     ///
     /// # Errors
     /// More than one datagram carries, or a radio that refused a frame.
-    pub fn send_datagram(&self, to: SocketAddrV6, bytes: &[u8]) -> Result<()> {
+    fn send_datagram(&self, to: SocketAddrV6, bytes: &[u8]) -> Result<()> {
         let datagram = Datagram {
             source: self.address(),
             destination: *to.ip(),
@@ -243,7 +244,9 @@ impl Transport for ThreadTransport {
     /// `target` may name an address and port, `thread://radio/[fd00::1]:5683`,
     /// overriding the transport's.
     fn send(&self, target: &str, bytes: &[u8]) -> Result<()> {
-        let to = match transport::socket::target("thread", target) {
+        let to = match Target::under(&["thread"], target)
+            .map(|named| (named.authority(), named.path()))
+        {
             Some((_, path)) if !path.is_empty() => path
                 .parse()
                 .map_err(|_| protocol_error(format!("{path:?} is not [address]:port")))?,
