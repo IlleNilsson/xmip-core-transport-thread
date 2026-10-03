@@ -13,6 +13,10 @@
 //! Send Location addresses a node's mesh-local address and port; a Receive
 //! Location is a node taking the datagrams sent to its port.
 //!
+//! **Acceptance is at-most-once here** ([`AT_MOST_ONCE`]): a UDP datagram
+//! has no reply, so nobody waits to be told how the receive cycle ended.
+//! Each datagram arrives whole, its fragments put back together.
+//!
 //! The radio is a trait: [`LoopbackRadio`] is the receiving node
 //! in-process, which every test and every box without an 802.15.4 radio
 //! drives, the way can-bus drives its loopback bus. The origin URI names
@@ -32,8 +36,13 @@ use net::Target;
 use transport::error::{Result, TransportError, protocol_error};
 use transport::held::Held;
 use transport::loopback::{FarEnd, LOOPBACK_TIMEOUT, Loopback};
-use transport::{Arrived, Configured, Directions, Transport};
+use transport::{Acknowledgement, Arrived, Configured, Directions, Taken, Transport};
 use xcore::settings::{Applies, Fixed, Kind, Presence, Read, Setting, Settings};
+
+/// Why a datagram over Thread cannot be acknowledged after the receive
+/// cycle.
+pub const AT_MOST_ONCE: &str = "a UDP datagram over Thread has no reply: the sender's last \
+                                fragment left with nobody waiting on an answer";
 
 /// How long a node waits for a datagram's next fragment unless told
 /// otherwise.
@@ -197,8 +206,9 @@ impl ThreadTransport {
         Ok(())
     }
 
-    /// Take one datagram sent to this node's port, or `None` when nothing
-    /// arrived in time.
+    /// Take one datagram sent to this node's port, whole, or `None` when
+    /// nothing arrived in time. Acceptance is at-most-once
+    /// ([`AT_MOST_ONCE`]).
     ///
     /// # Errors
     /// Where the radio could not be read, a fragment was out of place, or
@@ -217,7 +227,11 @@ impl ThreadTransport {
                     return Err(protocol_error("a datagram for another port"));
                 }
                 let origin = self.origin(&datagram.source, datagram.source_port);
-                return Ok(Some(Arrived::new(origin, datagram.payload)));
+                return Ok(Some(Arrived::whole(
+                    origin,
+                    datagram.payload,
+                    Acknowledgement::at_most_once(AT_MOST_ONCE),
+                )));
             }
             bytes = self
                 .radio
@@ -236,7 +250,12 @@ impl Transport for ThreadTransport {
         Directions::BOTH
     }
 
-    /// Nothing on the air is not an error: an empty vector.
+    fn arrivals(&self) -> transport::Arrivals {
+        transport::Arrivals::Unordered("each datagram is its own")
+    }
+
+    /// Nothing on the air is not an error: an empty vector. Acceptance is
+    /// at-most-once here: a UDP datagram has no reply ([`AT_MOST_ONCE`]).
     fn receive(&self) -> Result<Vec<Arrived>> {
         Ok(self.receive_one()?.into_iter().collect())
     }
@@ -337,7 +356,7 @@ impl Loopback for ThreadTransport {
                     .take()
                     .ok_or_else(|| protocol_error("no datagram came together"))?;
                 let origin = transport.origin(&datagram.source, datagram.source_port);
-                Ok(Arrived::new(origin, datagram.payload))
+                Ok(Taken::new(origin, datagram.payload))
             },
         )))
     }
@@ -480,14 +499,14 @@ mod tests {
         );
         let sender = ThreadTransport::new(Arc::new(End(air, false)), 0x1a2b);
         let sending = std::thread::spawn(move || sender.send("thread://air", &[9; 300]));
-        let arrived = node.receive().expect("taking");
+        let mut arrived = node.receive().expect("taking");
         sending.join().expect("thread").expect("sending");
         assert_eq!(arrived.len(), 1);
-        assert_eq!(arrived[0].bytes, [9; 300]);
-        assert_eq!(
-            arrived[0].origin_uri,
-            "thread://air/[fd00::ff:fe00:1a2b]:5683"
-        );
+        let arrived = arrived.remove(0);
+        assert!(!arrived.defers(), "a datagram is at-most-once");
+        let arrived = arrived.taken().expect("taken");
+        assert_eq!(arrived.bytes, [9; 300]);
+        assert_eq!(arrived.origin_uri, "thread://air/[fd00::ff:fe00:1a2b]:5683");
         let sender = ThreadTransport::new(
             Arc::new(End(Arc::new(Air(Mutex::new(VecDeque::new()))), false)),
             1,
