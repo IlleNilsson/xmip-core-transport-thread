@@ -33,6 +33,7 @@ use std::time::Duration;
 pub use datagram::{Datagram, MAX_UDP_PAYLOAD, Reassembly};
 pub use frame::{Frame, Lowpan};
 use net::Target;
+use transport::ArrivalIdentity;
 use transport::error::{Result, TransportError, protocol_error};
 use transport::held::Held;
 use transport::loopback::{FarEnd, LOOPBACK_TIMEOUT, Loopback};
@@ -227,11 +228,15 @@ impl ThreadTransport {
                     return Err(protocol_error("a datagram for another port"));
                 }
                 let origin = self.origin(&datagram.source, datagram.source_port);
-                return Ok(Some(Arrived::whole(
-                    origin,
-                    datagram.payload,
-                    Acknowledgement::at_most_once(AT_MOST_ONCE),
-                )));
+                let peer = SocketAddrV6::new(datagram.source, datagram.source_port, 0, 0);
+                return Ok(Some(
+                    Arrived::whole(
+                        origin,
+                        datagram.payload,
+                        Acknowledgement::at_most_once(AT_MOST_ONCE),
+                    )
+                    .from_peer(peer.into()),
+                ));
             }
             bytes = self
                 .radio
@@ -335,6 +340,10 @@ impl ThreadTransport {
 }
 
 impl Loopback for ThreadTransport {
+    fn arrival_identity(&self) -> ArrivalIdentity {
+        ArrivalIdentity::PEER
+    }
+
     /// Eleven bits size a 6LoWPAN datagram, and the IPv6 and UDP headers
     /// take forty-eight of them.
     fn ceiling(&self) -> Option<usize> {
@@ -356,7 +365,8 @@ impl Loopback for ThreadTransport {
                     .take()
                     .ok_or_else(|| protocol_error("no datagram came together"))?;
                 let origin = transport.origin(&datagram.source, datagram.source_port);
-                Ok(Taken::new(origin, datagram.payload))
+                let peer = SocketAddrV6::new(datagram.source, datagram.source_port, 0, 0);
+                Ok(Taken::new(origin, datagram.payload).from_peer(peer.into()))
             },
         )))
     }
