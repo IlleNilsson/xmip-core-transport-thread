@@ -259,6 +259,10 @@ impl Transport for ThreadTransport {
         transport::Arrivals::Unordered("each datagram is its own")
     }
 
+    fn waiting(&self) -> transport::Waiting {
+        transport::Waiting::Polled("a read of the loopback radio returns at once")
+    }
+
     /// Nothing on the air is not an error: an empty vector. Acceptance is
     /// at-most-once here: a UDP datagram has no reply ([`AT_MOST_ONCE`]).
     fn receive(&self) -> Result<Vec<Arrived>> {
