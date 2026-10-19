@@ -265,13 +265,18 @@ impl Transport for ThreadTransport {
 
     /// Nothing on the air is not an error: an empty vector. Acceptance is
     /// at-most-once here: a UDP datagram has no reply ([`AT_MOST_ONCE`]).
-    fn receive(&self) -> Result<Vec<Arrived>> {
+    fn receive_up_to(&self, _most: usize) -> Result<Vec<Arrived>> {
         Ok(self.receive_one()?.into_iter().collect())
+    }
+
+    fn sending(&self) -> transport::Sending {
+        transport::Sending::Gathered("one Thread datagram carries the whole body")
     }
 
     /// `target` may name an address and port, `thread://radio/[fd00::1]:5683`,
     /// overriding the transport's.
-    fn send(&self, target: &str, bytes: &[u8]) -> Result<()> {
+    fn send_from(&self, target: &str, outgoing: transport::Outgoing<'_>) -> Result<()> {
+        let bytes: &[u8] = &outgoing.gather()?;
         let to = match Target::under(&["thread"], target)
             .map(|named| (named.authority(), named.path()))
         {
