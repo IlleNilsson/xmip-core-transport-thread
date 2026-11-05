@@ -421,7 +421,7 @@ mod tests {
         assert!(ThreadTransport::open("wpan0", Applies::Send, &rloc16).is_err());
     }
 
-    /// The shapes a protocol breaks on, as the Playground lists them, up to
+    /// The shapes a protocol breaks on, as the Essentials lists them, up to
     /// the ceiling.
     fn payloads() -> Vec<(&'static str, Vec<u8>)> {
         let mut payloads = edge_payloads();
