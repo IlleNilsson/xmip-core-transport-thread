@@ -27,8 +27,9 @@ pub mod frame;
 
 use std::collections::VecDeque;
 use std::net::{Ipv6Addr, SocketAddrV6};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use xcore::lock::Locked;
 
 pub use datagram::{Datagram, MAX_UDP_PAYLOAD, Reassembly};
 pub use frame::{Frame, Lowpan};
@@ -82,10 +83,7 @@ impl LoopbackRadio {
     /// The next datagram the node took whole.
     #[must_use]
     pub fn take(&self) -> Option<Datagram> {
-        self.arrived
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .pop_front()
+        self.arrived.locked().pop_front()
     }
 }
 
@@ -98,14 +96,10 @@ impl Radio for LoopbackRadio {
         let frame = Frame::decode(bytes)?;
         let whole = self
             .reassembly
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
+            .locked()
             .take(Lowpan::decode(&frame.payload)?)?;
         if let Some(bytes) = whole {
-            self.arrived
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .push_back(Datagram::decode(&bytes)?);
+            self.arrived.locked().push_back(Datagram::decode(&bytes)?);
         }
         Ok(())
     }
@@ -175,7 +169,7 @@ impl ThreadTransport {
     }
 
     fn next_counters(&self) -> (u8, u16) {
-        let mut counters = self.counters.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut counters = self.counters.locked();
         let next = *counters;
         counters.0 = counters.0.wrapping_add(1);
         counters.1 = counters.1.wrapping_add(1);
