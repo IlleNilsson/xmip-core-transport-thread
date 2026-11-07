@@ -221,6 +221,7 @@ impl Reassembly {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::assert_matches;
 
     fn datagram(payload: &[u8]) -> Datagram {
         Datagram {
@@ -265,8 +266,8 @@ mod tests {
         let bytes = datagram(&payload).encode().expect("encode");
         let fragments = fragments(&bytes, 0x0042).expect("fragments");
         assert_eq!(fragments.len(), 7, "648 bytes: 104 and six of up to 104");
-        assert!(matches!(fragments[0], Lowpan::Frag1 { size: 648, .. }));
-        assert!(matches!(fragments[1], Lowpan::FragN { offset: 13, .. }));
+        assert_matches!(fragments[0], Lowpan::Frag1 { size: 648, .. });
+        assert_matches!(fragments[1], Lowpan::FragN { offset: 13, .. });
         for fragment in &fragments {
             assert!(fragment.encode().len() <= frame::MAX_PAYLOAD);
         }
