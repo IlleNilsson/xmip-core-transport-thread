@@ -39,7 +39,7 @@ use transport::error::{Result, TransportError, protocol_error};
 use transport::held::Held;
 use transport::loopback::{FarEnd, LOOPBACK_TIMEOUT, Loopback};
 use transport::{Acknowledgement, Arrived, Configured, Directions, Taken, Transport};
-use xcore::settings::{Applies, Fixed, Kind, Presence, Read, Setting, Settings};
+use xcore::settings::{Applies, Kind, Presence, Read, Setting, Settings};
 
 /// Why a datagram over Thread cannot be acknowledged after the receive
 /// cycle.
@@ -139,13 +139,6 @@ impl ThreadTransport {
             timeout: TIMEOUT,
             loopback: None,
         }
-    }
-
-    /// Give up on a datagram whose fragments stop coming for `timeout`.
-    #[must_use]
-    pub const fn timing_out_after(mut self, timeout: Duration) -> Self {
-        self.timeout = timeout;
-        self
     }
 
     /// This node's mesh-local address.
@@ -300,18 +293,20 @@ impl Configured for ThreadTransport {
                           derived.",
                 applies: Applies::Both,
             },
-            Setting {
-                name: "timeout",
-                kind: Kind::Duration,
-                presence: Presence::Default(Fixed::Duration(TIMEOUT)),
-                meaning: "How long a receive waits for a datagram and each of its fragments.",
-                applies: Applies::Receive,
-            },
+            transport::configured::timeout(
+                Applies::Receive,
+                Some(TIMEOUT),
+                "How long a receive waits for a datagram and each of its fragments.",
+            ),
         ],
     };
 
     /// The schemes a Location's address is entered with to choose this technology.
     const SCHEMES: &'static [&'static str] = &["thread"];
+
+    fn timeout_kept(&mut self) -> Option<&mut dyn transport::configured::TimeoutKept> {
+        Some(&mut self.timeout)
+    }
 
     fn configured(address: &str, settings: &Read) -> Result<Self> {
         let radio: Arc<dyn Radio> = match address {
@@ -324,11 +319,7 @@ impl Configured for ThreadTransport {
         };
         let rloc16 = u16::try_from(settings.integer("rloc16"))
             .map_err(|_| protocol_error("a short address over 0xfffe"))?;
-        let transport = Self::new(radio, rloc16);
-        Ok(match settings.optional_duration("timeout") {
-            Some(timeout) => transport.timing_out_after(timeout),
-            None => transport,
-        })
+        Ok(Self::new(radio, rloc16))
     }
 }
 
