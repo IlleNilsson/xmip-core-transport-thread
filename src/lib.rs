@@ -21,36 +21,57 @@
 //! in-process, which every test and every box without an 802.15.4 radio
 //! drives, the way can-bus drives its loopback bus. The origin URI names
 //! the radio and the sender: `thread://loopback/[fd00::ff:fe00:1a2b]:49152`.
+//!
+//! **Built with its `declaration` feature alone** the crate is
+//! [`declaration`], what a Location of it is configured with, and none of
+//! the code above, which is behind the default feature: what the surfaces'
+//! library carries (ADR-0064, amendment 2026-11-26).
 
+#[cfg(feature = "default")]
 pub mod datagram;
+#[cfg(feature = "declaration")]
+pub mod declaration;
+#[cfg(feature = "default")]
 pub mod frame;
 
-use std::collections::VecDeque;
-use std::net::{Ipv6Addr, SocketAddrV6};
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-use xcore::lock::Locked;
+#[cfg(feature = "default")]
+use std::{
+    collections::VecDeque,
+    net::{Ipv6Addr, SocketAddrV6},
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
+#[cfg(feature = "default")]
 pub use datagram::{Datagram, MAX_UDP_PAYLOAD, Reassembly};
+#[cfg(feature = "default")]
+use declaration::TIMEOUT;
+#[cfg(feature = "default")]
 pub use frame::{Frame, Lowpan};
+#[cfg(feature = "default")]
 use net::Target;
-use transport::ArrivalIdentity;
+#[cfg(feature = "default")]
 use transport::error::{Result, TransportError, protocol_error};
-use transport::held::Held;
+#[cfg(feature = "default")]
 use transport::loopback::{FarEnd, LOOPBACK_TIMEOUT, Loopback};
-use transport::{Acknowledgement, Arrived, Configured, Directions, Taken, Transport};
-use xcore::settings::{Applies, Kind, Presence, Read, Setting, Settings};
+#[cfg(feature = "default")]
+use transport::{
+    Acknowledgement, ArrivalIdentity, Arrived, Configured, Directions, Taken, Transport, held::Held,
+};
+#[cfg(feature = "default")]
+use xcore::{
+    lock::Locked,
+    settings::{Read, Settings},
+};
 
 /// Why a datagram over Thread cannot be acknowledged after the receive
 /// cycle.
+#[cfg(feature = "default")]
 pub const AT_MOST_ONCE: &str = "a UDP datagram over Thread has no reply: the sender's last \
                                 fragment left with nobody waiting on an answer";
 
-/// How long a node waits for a datagram's next fragment unless told
-/// otherwise.
-pub const TIMEOUT: Duration = Duration::from_secs(5);
-
 /// Where frames go and come from: the air, as one node hears it.
+#[cfg(feature = "default")]
 pub trait Radio: Send + Sync {
     /// The radio's name, for the origin URI.
     fn name(&self) -> &str;
@@ -68,12 +89,14 @@ pub trait Radio: Send + Sync {
 
 /// The receiving node in-process: what the sender transmits, the node puts
 /// back together, and the datagram is held until taken.
+#[cfg(feature = "default")]
 #[derive(Default)]
 pub struct LoopbackRadio {
     reassembly: Mutex<Reassembly>,
     arrived: Mutex<VecDeque<Datagram>>,
 }
 
+#[cfg(feature = "default")]
 impl LoopbackRadio {
     #[must_use]
     pub fn new() -> Self {
@@ -87,6 +110,7 @@ impl LoopbackRadio {
     }
 }
 
+#[cfg(feature = "default")]
 impl Radio for LoopbackRadio {
     fn name(&self) -> &'static str {
         "loopback"
@@ -112,6 +136,7 @@ impl Radio for LoopbackRadio {
 
 /// One node on one radio: its short address, the port it listens on, and
 /// where it sends.
+#[cfg(feature = "default")]
 #[derive(Clone)]
 pub struct ThreadTransport {
     radio: Arc<dyn Radio>,
@@ -125,6 +150,7 @@ pub struct ThreadTransport {
     loopback: Option<Arc<LoopbackRadio>>,
 }
 
+#[cfg(feature = "default")]
 impl ThreadTransport {
     /// A node at short address `rloc16` on `radio`, on port 5683 — CoAP's,
     /// which is what Thread applications speak — sending to the leader.
@@ -233,6 +259,7 @@ impl ThreadTransport {
     }
 }
 
+#[cfg(feature = "default")]
 impl Transport for ThreadTransport {
     fn name(&self) -> &'static str {
         "thread"
@@ -276,33 +303,10 @@ impl Transport for ThreadTransport {
     }
 }
 
+#[cfg(feature = "default")]
 impl Configured for ThreadTransport {
-    /// The address names the radio. `loopback`, the in-process node, is the
-    /// one the estate has; an 802.15.4 radio joins when it exposes one.
-    const SETTINGS: &'static Settings = &Settings {
-        technology: env!("CARGO_PKG_NAME"),
-        settings: &[
-            Setting {
-                name: "rloc16",
-                kind: Kind::Integer {
-                    minimum: 0,
-                    maximum: 0xfffe,
-                },
-                presence: Presence::Required,
-                meaning: "This node's short address, from which its mesh-local address is \
-                          derived.",
-                applies: Applies::Both,
-            },
-            transport::configured::timeout(
-                Applies::Receive,
-                Some(TIMEOUT),
-                "How long a receive waits for a datagram and each of its fragments.",
-            ),
-        ],
-    };
-
-    /// The schemes a Location's address is entered with to choose this technology.
-    const SCHEMES: &'static [&'static str] = &["thread"];
+    const SETTINGS: &'static Settings = declaration::SETTINGS;
+    const SCHEMES: &'static [&'static str] = declaration::SCHEMES;
 
     fn timeout_kept(&mut self) -> Option<&mut dyn transport::configured::TimeoutKept> {
         Some(&mut self.timeout)
@@ -323,6 +327,7 @@ impl Configured for ThreadTransport {
     }
 }
 
+#[cfg(feature = "default")]
 impl ThreadTransport {
     /// Both ends on one in-process radio: a node at `0x1a2b` sending to the
     /// leader, and the leader taking, the loopback timeout on the fragments.
@@ -336,6 +341,7 @@ impl ThreadTransport {
     }
 }
 
+#[cfg(feature = "default")]
 impl Loopback for ThreadTransport {
     fn arrival_identity(&self) -> ArrivalIdentity {
         ArrivalIdentity::PEER
@@ -384,7 +390,7 @@ impl Loopback for ThreadTransport {
 mod tests {
     use super::*;
     use transport::payload::{edge_payloads, patterned};
-    use xcore::settings::Given;
+    use xcore::settings::{Applies, Given};
 
     #[test]
     fn thread_declares_its_settings_and_reads_through_them() {
