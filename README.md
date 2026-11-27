@@ -1,8 +1,33 @@
 # xmip-core-transport-thread
 
-Thread transport: IPv6 and UDP over IEEE 802.15.4 with 6LoWPAN — a Stream is one UDP datagram, whole in a frame or in FRAG1 and FRAGN fragments reassembled by datagram tag; a loopback radio stands in for the mesh. A technology of [xmip-core-transport](https://github.com/IlleNilsson/xmip-core-transport).
+Thread transport: IPv6 and UDP over IEEE 802.15.4 with 6LoWPAN — a Stream is one UDP datagram, whole in a frame or in FRAG1 and FRAGN fragments reassembled by datagram tag; an 802.15.4 interface of Linux's kernel, or a loopback radio in process. A technology of [xmip-core-transport](https://github.com/IlleNilsson/xmip-core-transport).
 
 A send target is read by `net::Target` in [xmip-core-library-net](https://github.com/IlleNilsson/xmip-core-library-net), the one reading of a URI every technology calls: scheme, authority, path and decoded query. Until 2026-09-28 it was read through the transport capability's `socket::target`, which split it on its first slash and left the query in the path.
+
+## The radio
+
+The radio is the transport capability's `ieee802154::Radio`, and a frame's
+MAC header and check sequence are the radio's: this crate hands it the
+6LoWPAN headers and the datagram (`src/lowpan.rs`), to the next hop's short
+address, and takes them back with the short address that sent them
+(ADR-0051, amendment 2026-11-27). A Location's address names the radio:
+
+- **an interface of Linux's kernel**, `thread://wpan0`, an `AF_IEEE802154`
+  datagram socket bound to the interface's own PAN and short address
+  (`net::ieee802154::Interface`), which a user opens with no capability.
+  The Location's `rloc16` must be the interface's short address, since the
+  kernel's MAC sends from it; another is refused, naming both. Elsewhere,
+  and on a Linux whose kernel carries no 802.15.4 sockets, it is refused in
+  words, so `xmip-service` links Thread on Linux alone;
+- **`loopback`**, the receiving node in process, the leader putting each
+  datagram back together, which every test and the System Tests drive.
+
+A Send Location's address may name where it sends after the radio, as a
+target does: `thread://wpan0/[fd00::ff:fe00:2]:5683`; the leader on port
+5683 where it names none. Proven through a node on Linux's two virtual
+radios, `mac802154_hwsim`'s `wpan0` and `wpan1`, by the estate's service
+test (`aired.rs`). Until 2026-11-27 the crate wrote the MAC frame itself,
+its PAN fixed at `0xface`, and had no radio but the loopback.
 
 ## Acknowledgement
 

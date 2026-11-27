@@ -10,8 +10,8 @@ use xcore::settings::{Applies, Kind, Presence, Setting, Settings};
 pub const TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Every setting a Location takes beyond its address, which names the
-/// radio. `loopback`, the in-process node, is the one the estate has; an
-/// 802.15.4 radio joins when it exposes one.
+/// radio — an 802.15.4 interface of Linux's kernel, `wpan0`, or `loopback`,
+/// the in-process node — and then, for a send, where it goes.
 pub const SETTINGS: &Settings = &Settings {
     technology: env!("CARGO_PKG_NAME"),
     settings: &[
@@ -23,7 +23,7 @@ pub const SETTINGS: &Settings = &Settings {
             },
             presence: Presence::Required,
             meaning: "This node's short address, from which its mesh-local address is \
-                      derived.",
+                      derived: on an interface, the interface's own.",
             applies: Applies::Both,
         },
         transport::configured::timeout(

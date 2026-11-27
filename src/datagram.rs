@@ -5,9 +5,10 @@
 use std::net::Ipv6Addr;
 
 use net::ceiling;
+use net::ieee802154::MAX_PAYLOAD;
 use transport::error::{Result, protocol_error};
 
-use crate::frame::{self, Lowpan, MAX_DATAGRAM};
+use crate::lowpan::{Lowpan, MAX_DATAGRAM};
 
 /// The IPv6 header.
 const IPV6_HEADER: usize = 40;
@@ -17,13 +18,13 @@ const UDP_HEADER: usize = 8;
 /// headers take forty-eight.
 pub const MAX_UDP_PAYLOAD: usize = MAX_DATAGRAM - IPV6_HEADER - UDP_HEADER;
 /// The IPv6 dispatch byte, then the datagram: what fits one frame whole.
-pub const MAX_UNFRAGMENTED: usize = frame::MAX_PAYLOAD - 1 - IPV6_HEADER - UDP_HEADER;
+pub const MAX_UNFRAGMENTED: usize = MAX_PAYLOAD - 1 - IPV6_HEADER - UDP_HEADER;
 /// What a first fragment carries: the frame less four of FRAG1 header and
 /// the dispatch, rounded down to eight-byte units so the offsets that follow
 /// are whole.
-const FRAG1_BYTES: usize = (frame::MAX_PAYLOAD - 5) / 8 * 8;
+const FRAG1_BYTES: usize = (MAX_PAYLOAD - 5) / 8 * 8;
 /// What a later fragment carries: the frame less five of FRAGN header.
-const FRAGN_BYTES: usize = (frame::MAX_PAYLOAD - 5) / 8 * 8;
+const FRAGN_BYTES: usize = (MAX_PAYLOAD - 5) / 8 * 8;
 
 const NEXT_HEADER_UDP: u8 = 17;
 
@@ -140,7 +141,7 @@ pub fn fragments(datagram: &[u8], tag: u16) -> Result<Vec<Lowpan>> {
     if datagram.len() > MAX_DATAGRAM {
         return Err(protocol_error("a datagram over what eleven bits size"));
     }
-    if datagram.len() < frame::MAX_PAYLOAD {
+    if datagram.len() < MAX_PAYLOAD {
         return Ok(vec![Lowpan::Ipv6(datagram.to_vec())]);
     }
     let size = u16::try_from(datagram.len()).unwrap_or(u16::MAX);
@@ -269,7 +270,7 @@ mod tests {
         assert_matches!(fragments[0], Lowpan::Frag1 { size: 648, .. });
         assert_matches!(fragments[1], Lowpan::FragN { offset: 13, .. });
         for fragment in &fragments {
-            assert!(fragment.encode().len() <= frame::MAX_PAYLOAD);
+            assert!(fragment.encode().len() <= MAX_PAYLOAD);
         }
         let mut reassembly = Reassembly::default();
         let mut whole = None;
